@@ -85,6 +85,10 @@ Agent 会自动检测并引导你完成，但你也可以提前配置：
 | **滚动** | 上下滚动、滚动到指定元素 | JavaScript `scrollBy/scrollTo` |
 | **切换标签** | 按序号或 URL 关键词切换标签页 | AppleScript |
 | **等待加载** | 等待页面加载完成后再操作 | JavaScript `readyState` |
+| **监控网络请求** | 记录页面的 fetch/XHR 请求——URL、状态码、耗时、响应内容 | JavaScript 注入 |
+| **读取 iframe** | 通过临时标签页读取跨域 iframe 内容 | AppleScript + JavaScript |
+| **无痕窗口** | 操控无痕浏览窗口；旧版 Safari 可用视觉降级模式（截图 + 坐标点击） | AppleScript / `screencapture` |
+| **弹窗防护** | 自动应答 `alert`/`confirm`/`prompt`，点击操作永不卡死 | JavaScript |
 
 ### 截图模式
 

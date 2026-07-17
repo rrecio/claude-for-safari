@@ -87,6 +87,10 @@ Zero install. Pure macOS native capabilities. One Skill covers all browser opera
 | **Scroll** | Scroll up/down, scroll to element | JavaScript `scrollBy/scrollTo` |
 | **Switch tabs** | Switch by index or URL keyword | AppleScript |
 | **Wait for load** | Wait until page is fully loaded | JavaScript `readyState` |
+| **Monitor network** | Log the page's fetch/XHR requests — URL, status, timing, bodies | JavaScript shim |
+| **Read iframes** | Read cross-origin iframe content via a temporary tab | AppleScript + JavaScript |
+| **Private windows** | Control private browsing; vision fallback (screenshots + coordinate clicks) for older Safari | AppleScript / `screencapture` |
+| **Dialog guard** | Auto-answer `alert`/`confirm`/`prompt` so clicks never hang the session | JavaScript |
 
 ### Screenshot Modes
 

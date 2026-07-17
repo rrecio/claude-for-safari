@@ -1,6 +1,6 @@
 ---
 name: claude-for-safari
-description: Control the user's real Safari browser on macOS using AppleScript and screencapture. This skill should be used when the user asks to interact with Safari, browse websites, read web pages, automate browser tasks, take screenshots of web content, or when any task would benefit from seeing or interacting with what's in their browser. Triggers on keywords like "safari", "browser", "web page", "open tab", "screenshot the page", "read this site", "browse", "click on", "fill in the form".
+description: Control the user's real Safari browser on macOS using AppleScript and screencapture. This skill should be used when the user asks to interact with Safari, browse websites, read web pages, automate browser tasks, take screenshots of web content, monitor a page's network requests, read iframe content, drive private browsing windows, or when any task would benefit from seeing or interacting with what's in their browser. Triggers on keywords like "safari", "browser", "web page", "open tab", "screenshot the page", "read this site", "browse", "click on", "fill in the form", "network requests", "iframe", "private window".
 ---
 
 # Claude for Safari
@@ -8,6 +8,8 @@ description: Control the user's real Safari browser on macOS using AppleScript a
 Operate the user's real Safari browser on macOS via AppleScript (`osascript`) and `screencapture`. This provides full access to the user's actual browser session — including login state, cookies, and open tabs — without any extensions or additional software.
 
 ## Prerequisites
+
+This skill is macOS-only by nature (Safari only exists on macOS). Fail fast on other platforms: `[ "$(uname)" = "Darwin" ]`.
 
 Before first use, verify two settings are enabled. Run this check at the start of every session:
 
@@ -18,6 +20,36 @@ osascript -e 'tell application "Safari" to get name of front window' 2>&1
 If this fails, instruct the user to enable:
 1. **System Settings > Privacy & Security > Automation** — grant terminal app permission to control Safari
 2. **Safari > Settings > Advanced** — enable "Show features for web developers", then **Develop menu > Allow JavaScript from Apple Events**
+
+If step 1 is granted but `do JavaScript` fails with an "Allow JavaScript from Apple Events" error, you can enable it for the user (ask first — it is a security setting):
+
+```bash
+defaults write com.apple.Safari AllowJavaScriptFromAppleEvents -bool true
+```
+
+Verified: this takes effect immediately, no Safari restart needed. If JS stays blocked, use the [Vision Fallback Mode](#13-vision-fallback-mode-coordinate-interaction) — it needs no JS at all.
+
+## Bundled Scripts
+
+Reusable JavaScript lives in this skill's `scripts/` directory (`$SKILL_DIR` below means the directory containing this SKILL.md). Inject a script file with this JXA pattern — the file passes through an environment variable, so no quote-escaping is ever needed:
+
+```bash
+JS=$(cat "$SKILL_DIR/scripts/net_monitor.js") osascript -l JavaScript -e '
+const safari = Application("Safari");
+const js = $.NSProcessInfo.processInfo.environment.objectForKey("JS").js;
+safari.doJavaScript(js, {in: safari.windows[0].currentTab()});
+'
+```
+
+The last expression's value is printed. To target a specific tab use `safari.windows[0].tabs[N-1]` (JXA indexes from 0; AppleScript's `tab N` is 1-based).
+
+| Script | Purpose |
+|---|---|
+| `scripts/net_monitor.js` | Install in-page network logging (fetch + XHR) — see section 11 |
+| `scripts/net_read.js` | Read the network log as JSON — see section 11 |
+| `scripts/list_frames.js` | List all iframes with origin classification — see section 12 |
+| `scripts/dialog_guard.js` | Neutralize alert/confirm/prompt before risky clicks — see section 14 |
+| `scripts/safari_wid.swift` | Window-ID helper for background screenshots — see section 4 |
 
 ## Core Capabilities
 
@@ -133,8 +165,12 @@ APPLESCRIPT
 Two approaches are available. Auto-detect which to use at session start:
 
 ```bash
-# Test if Screen Recording permission is granted (background screenshot available)
-/tmp/safari_wid 2>/dev/null && echo "BACKGROUND_SCREENSHOT=true" || echo "BACKGROUND_SCREENSHOT=false"
+# Compile the window-ID helper, then test if background capture works
+# (produces a file only when Screen Recording permission is granted)
+[ -f /tmp/safari_wid ] || swiftc "$SKILL_DIR/scripts/safari_wid.swift" -o /tmp/safari_wid
+rm -f /tmp/safari_probe.png
+WID=$(/tmp/safari_wid) && screencapture -l "$WID" -o -x /tmp/safari_probe.png 2>/dev/null
+[ -s /tmp/safari_probe.png ] && echo "BACKGROUND_SCREENSHOT=true" || echo "BACKGROUND_SCREENSHOT=false"
 ```
 
 #### Background Screenshot (requires Screen Recording permission)
@@ -143,29 +179,17 @@ If the user has granted Screen Recording permission to the terminal app, use `sc
 
 ```bash
 # Compile the helper once per session (if not already compiled)
-if [ ! -f /tmp/safari_wid ]; then
-cat > /tmp/safari_wid.swift << 'SWIFT'
-import CoreGraphics
-import Foundation
-let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
-guard let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { exit(1) }
-for window in windowList {
-    guard let owner = window[kCGWindowOwnerName as String] as? String,
-          owner == "Safari",
-          let layer = window[kCGWindowLayer as String] as? Int,
-          layer == 0,
-          let wid = window[kCGWindowNumber as String] as? Int else { continue }
-    print(wid)
-    exit(0)
-}
-exit(1)
-SWIFT
-swiftc /tmp/safari_wid.swift -o /tmp/safari_wid
-fi
+[ -f /tmp/safari_wid ] || swiftc "$SKILL_DIR/scripts/safari_wid.swift" -o /tmp/safari_wid
 
-# Capture Safari window in background (no activation needed)
+# Capture the frontmost Safari window in background (no activation needed)
 WID=$(/tmp/safari_wid)
 screencapture -l "$WID" -o -x /tmp/safari_screenshot.png
+```
+
+With multiple Safari windows, list them all and pick by title (`windowID<TAB>title` per line, front-to-back):
+
+```bash
+/tmp/safari_wid --all
 ```
 
 To enable this, instruct the user: **System Settings > Privacy & Security > Screen Recording** — grant permission to the terminal app (Terminal / iTerm / Warp).
@@ -279,13 +303,31 @@ end tell'
 
 **Important**: For React-controlled inputs, use the native setter + `dispatchEvent` pattern shown above. Directly setting `.value` will not trigger React's state update.
 
-Type via System Events (simulates real keyboard — useful when JS injection is blocked):
+**Verify, don't type blind.** Before setting a value, focus the target and confirm it; after setting, read the value back:
+
+```bash
+osascript -e '
+tell application "Safari"
+  do JavaScript "
+    const input = document.querySelector(\"input[name=search]\");
+    input.focus();
+    const focused = document.activeElement === input;
+    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, \"value\").set;
+    nativeSetter.call(input, \"search text\");
+    input.dispatchEvent(new Event(\"input\", {bubbles: true}));
+    JSON.stringify({focusedCorrectly: focused, valueReadBack: input.value})
+  " in current tab of front window
+end tell'
+```
+
+Type via System Events (simulates real keyboard — useful when JS injection is blocked). System Events keystrokes go to whatever has focus, so make the activate + keystroke one atomic `osascript` call — never separate calls, as focus can shift between them — and verify afterwards (read the value via JS, or screenshot):
 
 ```bash
 osascript -e '
 tell application "Safari" to activate
 delay 0.3
 tell application "System Events"
+  if name of first process whose frontmost is true is not "Safari" then error "Safari not frontmost — aborting keystroke"
   keystroke "hello world"
 end tell'
 ```
@@ -339,17 +381,114 @@ end tell'
 
 ### 10. Wait for Page Load
 
+**Pitfall**: a newly created tab reports `readyState === "complete"` for its initial `about:blank` document *before* navigation commits. Always check the URL too:
+
 ```bash
 osascript -e '
 tell application "Safari"
-  -- Wait until page finishes loading (max 10 seconds)
-  repeat 20 times
-    set readyState to do JavaScript "document.readyState" in current tab of front window
-    if readyState is "complete" then exit repeat
+  -- Wait until the target page finishes loading (max 15 seconds)
+  repeat 30 times
+    try
+      set pageState to do JavaScript "location.href.indexOf(\"example.com\") !== -1 && document.readyState === \"complete\" ? \"ready\" : \"loading\"" in current tab of front window
+      if pageState is "ready" then exit repeat
+    end try
     delay 0.5
   end repeat
 end tell'
 ```
+
+For SPAs that load data after `readyState` completes, wait for network idle using the monitor from section 11 (inject it first): poll until `window.__claudeNet.pending` is `0` for ~1 second.
+
+### 11. Network Monitoring
+
+`do JavaScript` cannot see network traffic by itself, but an in-page shim can. Inject `scripts/net_monitor.js` (idempotent — safe to inject repeatedly) using the pattern from [Bundled Scripts](#bundled-scripts). It wraps `fetch` and `XMLHttpRequest`, logging method, URL, status, duration, content type, and capped request/response body snippets to `window.__claudeNet.log` (ring buffer, 200 entries). On install it also seeds the log from `performance.getEntriesByType("resource")`, so requests that fired before injection appear too (URL + timing only, no bodies).
+
+Read the log with `scripts/net_read.js`. To filter, set a query first:
+
+```bash
+osascript -e 'tell application "Safari" to do JavaScript "window.__claudeNetQuery = {match: \"api\", limit: 20}" in current tab of front window'
+JS=$(cat "$SKILL_DIR/scripts/net_read.js") osascript -l JavaScript -e '
+const safari = Application("Safari");
+const js = $.NSProcessInfo.processInfo.environment.objectForKey("JS").js;
+safari.doJavaScript(js, {in: safari.windows[0].currentTab()});
+'
+```
+
+The monitor does not survive navigation — re-inject after every page load. What it cannot see: service-worker traffic, the top-level document request, request/response headers, and bodies of requests that fired before injection.
+
+### 12. Cross-Origin Iframes
+
+The browser's same-origin policy blocks direct JS access to cross-origin frames, but two workarounds cover most needs. First enumerate frames with `scripts/list_frames.js` — it returns each frame's `src`, size, visibility, and whether it is `sameOrigin` (readable in place via `frame.contentDocument`).
+
+For a cross-origin frame, open its `src` in a temporary tab, read it there, and close the tab:
+
+```bash
+osascript -e '
+tell application "Safari"
+  tell front window
+    set tempTab to make new tab with properties {URL:"https://frame-src-here.example/"}
+    set tempIndex to index of tempTab
+  end tell
+  repeat 30 times
+    try
+      set pageState to do JavaScript "location.href.indexOf(\"frame-src-here\") !== -1 && document.readyState === \"complete\" ? \"ready\" : \"loading\"" in tab tempIndex of front window
+      if pageState is "ready" then exit repeat
+    end try
+    delay 0.5
+  end repeat
+  set frameText to do JavaScript "document.body.innerText" in tab tempIndex of front window
+  close tab tempIndex of front window
+  return frameText
+end tell'
+```
+
+Caveats: frames that depend on the parent page (postMessage, auth context) may render differently standalone. Screenshots (section 4) always capture iframe pixels regardless of origin — use them when the temp-tab rendering differs.
+
+### 13. Vision Fallback Mode (Coordinate Interaction)
+
+When `do JavaScript` is unavailable — old Safari versions that block it in private windows, the Apple Events setting disabled, or a page where injection misbehaves — drive Safari purely with screenshots and coordinates. (Note: on current Safari — verified on Safari 26 — `do JavaScript` works in private windows too, so try it before falling back.)
+
+The loop:
+
+1. **Screenshot** the target window: `/tmp/safari_wid --all`, pick the window ID by title (private windows are titled "…, Private Browsing"), `screencapture -l "$WID" -o -x /tmp/shot.png`. Read the image.
+2. **Get window bounds** in screen points via System Events (`position` + `size` of the window).
+3. **Convert coordinates**: the screenshot is in physical pixels; on Retina displays `scale = imageWidth / windowWidth` (typically 2). A point of interest at image pixel `(px, py)` is at screen point `(windowX + px/scale, windowY + py/scale)`.
+4. **Click** — activate, raise, and click in ONE atomic osascript call (focus can shift between separate calls, and window indices reorder after raising, so re-resolve the window by title every time):
+
+```bash
+osascript -e '
+tell application "Safari" to activate
+delay 0.5
+tell application "System Events"
+  tell process "Safari"
+    repeat with i from 1 to (count of windows)
+      if title of window i contains "Private Browsing" then
+        perform action "AXRaise" of window i
+        exit repeat
+      end if
+    end repeat
+  end tell
+  delay 0.3
+  click at {552, 362} -- the screen point computed in step 3
+end tell'
+```
+
+5. **Type** with System Events keystrokes (section 7); navigate with Cmd+L → type URL → Return.
+6. **Screenshot again** to verify the result before the next action.
+
+### 14. Dialog Handling
+
+A native `alert()`/`confirm()` dialog blocks `do JavaScript` and every subsequent Apple Event — the session appears to hang. Prevent this: inject `scripts/dialog_guard.js` **before** clicking anything that might pop a dialog (delete buttons, logout links, unsaved-form navigation). It replaces `alert`/`confirm`/`prompt` with silent versions that log to `window.__claudeDialogs`, and neutralizes `beforeunload` prompts.
+
+Control the answers before the click, and read what happened after:
+
+```bash
+# confirm() returns true by default; to decline: window.__claudeDialogAnswer = false
+# prompt() returns its default; to answer: window.__claudeDialogPromptText = "my answer"
+osascript -e 'tell application "Safari" to do JavaScript "JSON.stringify(window.__claudeDialogs)" in current tab of front window'
+```
+
+Recovery, if a dialog is already blocking scripting: dismiss it with System Events — activate Safari, then `key code 36` (Return, accepts) or `key code 53` (Escape, cancels).
 
 ## Workflow: Browsing with Screenshot Feedback Loop
 
@@ -374,10 +513,13 @@ osascript -e 'tell application "Safari" to do JavaScript "document.body.innerTex
 
 Note: Background screenshots capture the entire Safari window (whichever tab is active). To screenshot a specific tab, first switch to it via AppleScript.
 
-## Limitations
+## Limitations & Workarounds
 
-- **macOS only** — AppleScript and screencapture are macOS-specific
-- **Cannot intercept network requests** — only page content and JS execution
-- **Cannot access cross-origin iframes** — browser security applies
-- **Private browsing windows** — AppleScript cannot control private windows
-- **System Events keystroke is "blind"** — it types into whatever is focused; ensure Safari is frontmost before using
+| Limitation | Workaround | Remaining gap |
+|---|---|---|
+| macOS only | None needed — Safari only exists on macOS. Fail fast elsewhere (see Prerequisites). | Inherent. |
+| No native network interception | In-page fetch/XHR shim + performance entries — section 11. | Service workers, top-level document request, headers, pre-injection bodies. |
+| Cross-origin iframes unreadable | Enumerate + read each frame in a temp tab — section 12. Screenshots capture frame pixels regardless. | Frames depending on parent postMessage/auth may render differently standalone. |
+| Private browsing windows | On current Safari (verified on 26), `do JavaScript` works in private windows. On older versions, use Vision Fallback Mode — section 13. | Vision mode is slower: one screenshot round-trip per action. |
+| System Events keystroke is "blind" | Focus-verify + read-back pattern, atomic activate+keystroke — section 7. | None in practice when the pattern is followed. |
+| JS dialogs hang the session | Pre-inject dialog guard; Return/Escape recovery — section 14. | Dialogs fired before the guard is installed still need keyboard recovery. |
