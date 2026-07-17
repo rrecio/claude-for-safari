@@ -49,6 +49,8 @@ The last expression's value is printed. To target a specific tab use `safari.win
 | `scripts/net_read.js` | Read the network log as JSON — see section 11 |
 | `scripts/list_frames.js` | List all iframes with origin classification — see section 12 |
 | `scripts/dialog_guard.js` | Neutralize alert/confirm/prompt before risky clicks — see section 14 |
+| `scripts/control_border.js` | Show the "Claude is controlling this tab" border — see section 15 |
+| `scripts/control_border_remove.js` | Remove the control-indicator border — see section 15 |
 | `scripts/safari_wid.swift` | Window-ID helper for background screenshots — see section 4 |
 
 ## Core Capabilities
@@ -490,14 +492,32 @@ osascript -e 'tell application "Safari" to do JavaScript "JSON.stringify(window.
 
 Recovery, if a dialog is already blocking scripting: dismiss it with System Events — activate Safari, then `key code 36` (Return, accepts) or `key code 53` (Escape, cancels).
 
+### 15. Visual Control Indicator
+
+Show the user which tab is being controlled — a colored border plus a "Claude is controlling this tab" badge, like the Claude Chrome extension. Inject `scripts/control_border.js` (idempotent) when you start controlling a tab, using the pattern from [Bundled Scripts](#bundled-scripts):
+
+```bash
+JS=$(cat "$SKILL_DIR/scripts/control_border.js") osascript -l JavaScript -e '
+const safari = Application("Safari");
+const js = $.NSProcessInfo.processInfo.environment.objectForKey("JS").js;
+safari.doJavaScript(js, {in: safari.windows[0].currentTab()});
+'
+```
+
+The indicator does not survive navigation — **re-inject after every page load** (right after the section 10 wait; injection is idempotent, so re-injecting blindly is safe). SPA route changes keep it alive. When finished with a tab, remove it with `scripts/control_border_remove.js` — and if the task touched several tabs, remove it from each.
+
+Limits: the border frames the web content area only (not the toolbar), and cannot be shown where JS injection is blocked (vision-fallback mode has no indicator).
+
 ## Workflow: Browsing with Screenshot Feedback Loop
 
 For tasks that require visual confirmation, use the screenshot loop:
 
-1. Perform action (navigate, click, scroll, etc.)
-2. Wait for page load if needed
-3. Take screenshot (background or foreground) → Read the image to see result
-4. Decide next action based on what is visible
+1. Show the control indicator on the tab (section 15)
+2. Perform action (navigate, click, scroll, etc.)
+3. Wait for page load if needed, then re-inject the control indicator
+4. Take screenshot (background or foreground) → Read the image to see result
+5. Decide next action based on what is visible
+6. When the task is done, remove the control indicator
 
 ## Operating on Specific Tabs
 

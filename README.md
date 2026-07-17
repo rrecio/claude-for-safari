@@ -91,6 +91,7 @@ Zero install. Pure macOS native capabilities. One Skill covers all browser opera
 | **Read iframes** | Read cross-origin iframe content via a temporary tab | AppleScript + JavaScript |
 | **Private windows** | Control private browsing; vision fallback (screenshots + coordinate clicks) for older Safari | AppleScript / `screencapture` |
 | **Dialog guard** | Auto-answer `alert`/`confirm`/`prompt` so clicks never hang the session | JavaScript |
+| **Control indicator** | Colored border + badge on the tab Claude is controlling | JavaScript |
 
 ### Screenshot Modes
 

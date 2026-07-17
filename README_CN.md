@@ -89,6 +89,7 @@ Agent 会自动检测并引导你完成，但你也可以提前配置：
 | **读取 iframe** | 通过临时标签页读取跨域 iframe 内容 | AppleScript + JavaScript |
 | **无痕窗口** | 操控无痕浏览窗口；旧版 Safari 可用视觉降级模式（截图 + 坐标点击） | AppleScript / `screencapture` |
 | **弹窗防护** | 自动应答 `alert`/`confirm`/`prompt`，点击操作永不卡死 | JavaScript |
+| **控制指示** | 在 Claude 正在操控的标签页上显示彩色边框和徽章 | JavaScript |
 
 ### 截图模式
 
