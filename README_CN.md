@@ -81,7 +81,8 @@ Agent 会自动检测并引导你完成，但你也可以提前配置：
 | **截图** | 截取 Safari 窗口画面，AI 可以"看到"页面 | `screencapture` |
 | **导航** | 打开 URL、新建标签页、新建窗口 | AppleScript |
 | **点击** | 点击页面元素（兼容 React/Vue/Angular） | JavaScript `dispatchEvent` |
-| **输入** | 填写表单、模拟键盘输入 | JavaScript + System Events |
+| **输入** | 设置输入框的值、模拟键盘输入 | JavaScript + System Events |
+| **填写表单** | 自动发现全部字段，一次性填写文本/下拉/复选/单选 | JavaScript |
 | **滚动** | 上下滚动、滚动到指定元素 | JavaScript `scrollBy/scrollTo` |
 | **切换标签** | 按序号或 URL 关键词切换标签页 | AppleScript |
 | **等待加载** | 等待页面加载完成后再操作 | JavaScript `readyState` |

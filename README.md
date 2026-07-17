@@ -83,7 +83,8 @@ Zero install. Pure macOS native capabilities. One Skill covers all browser opera
 | **Screenshot** | Capture Safari window — AI can "see" the page | `screencapture` |
 | **Navigate** | Open URLs, new tabs, new windows | AppleScript |
 | **Click** | Click elements (React/Vue/Angular compatible) | JavaScript `dispatchEvent` |
-| **Type** | Fill forms, simulate keyboard input | JavaScript + System Events |
+| **Type** | Set input values, simulate keyboard input | JavaScript + System Events |
+| **Fill forms** | Discover every field, then fill text/select/checkbox/radio in one pass | JavaScript |
 | **Scroll** | Scroll up/down, scroll to element | JavaScript `scrollBy/scrollTo` |
 | **Switch tabs** | Switch by index or URL keyword | AppleScript |
 | **Wait for load** | Wait until page is fully loaded | JavaScript `readyState` |

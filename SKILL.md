@@ -49,6 +49,8 @@ The last expression's value is printed. To target a specific tab use `safari.win
 | `scripts/net_read.js` | Read the network log as JSON — see section 11 |
 | `scripts/list_frames.js` | List all iframes with origin classification — see section 12 |
 | `scripts/dialog_guard.js` | Neutralize alert/confirm/prompt before risky clicks — see section 14 |
+| `scripts/form_discover.js` | List every form field with selector, label, type, options — see section 7 |
+| `scripts/form_fill.js` | Fill a whole form in one pass with per-field results — see section 7 |
 | `scripts/control_border.js` | Show the "Claude is controlling this tab" border — see section 15 |
 | `scripts/control_border_remove.js` | Remove the control-indicator border — see section 15 |
 | `scripts/safari_wid.swift` | Window-ID helper for background screenshots — see section 4 |
@@ -321,6 +323,30 @@ tell application "Safari"
   " in current tab of front window
 end tell'
 ```
+
+**Structured form filling** — to fill a whole form, first discover its fields with `scripts/form_discover.js` (inject via the [Bundled Scripts](#bundled-scripts) pattern). It returns JSON for every visible field: selector, type, resolved label, current value, select options, checked state, required/disabled flags. Passwords are masked; hidden inputs are skipped. Selectors are plain CSS or `"css >> n"` (nth match) — pass them back verbatim.
+
+Then set the fill spec and inject `scripts/form_fill.js`:
+
+```bash
+osascript -e 'tell application "Safari" to do JavaScript "
+window.__claudeFormFill = [
+  {selector: \"#fullname\", value: \"Jane Doe\"},
+  {selector: \"#country\", value: \"Brazil\"},
+  {selector: \"input[name=\\\"subscribe\\\"]\", value: true},
+  {selector: \"input[name=\\\"plan\\\"][value=\\\"pro\\\"]\", value: true}
+]; \"spec set\"" in current tab of front window'
+
+JS=$(cat "$SKILL_DIR/scripts/form_fill.js") osascript -l JavaScript -e '
+const safari = Application("Safari");
+const js = $.NSProcessInfo.processInfo.environment.objectForKey("JS").js;
+safari.doJavaScript(js, {in: safari.windows[0].currentTab()});
+'
+```
+
+It handles every field kind with framework-compatible events — text/textarea (native setter from the correct prototype), select (match by option value or visible text), checkbox/radio (click events), contenteditable — and returns per-field results: `{selector, status: "filled" | "not-found" | "disabled" | "option-not-found", valueAfter}`. Check `valueAfter` — it is the read-back verification.
+
+**Never pass passwords through this flow** — values end up in shell commands and transcripts. For password fields, focus the field via JS and let the user type, or use System Events keystrokes.
 
 Type via System Events (simulates real keyboard — useful when JS injection is blocked). System Events keystrokes go to whatever has focus, so make the activate + keystroke one atomic `osascript` call — never separate calls, as focus can shift between them — and verify afterwards (read the value via JS, or screenshot):
 
