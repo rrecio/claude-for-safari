@@ -7,6 +7,8 @@ description: Control the user's real Safari browser on macOS using AppleScript a
 
 Operate the user's real Safari browser on macOS via AppleScript (`osascript`) and `screencapture`. This provides full access to the user's actual browser session — including login state, cookies, and open tabs — without any extensions or additional software.
 
+**Required: always show the control indicator.** Whenever controlling Safari — clicking, typing, navigating, scrolling, filling forms — the visual control indicator (section 15) must be visible on the tab being driven. Inject `scripts/control_border.js` before the first action on a tab, re-inject it after every navigation, and remove it with `scripts/control_border_remove.js` only when the task is done. Read-only queries (listing tabs, reading a page once) don't require it; anything that acts on a page does.
+
 ## Prerequisites
 
 This skill is macOS-only by nature (Safari only exists on macOS). Fail fast on other platforms: `[ "$(uname)" = "Darwin" ]`.
@@ -520,7 +522,7 @@ Recovery, if a dialog is already blocking scripting: dismiss it with System Even
 
 ### 15. Visual Control Indicator
 
-Show the user which tab is being controlled — a colored border plus a "Claude is controlling this tab" badge, like the Claude Chrome extension. Inject `scripts/control_border.js` (idempotent) when you start controlling a tab, using the pattern from [Bundled Scripts](#bundled-scripts):
+**Required whenever the skill acts on a page** (see the rule at the top of this document): the user must always be able to see which tab is being controlled — a colored border plus a "Claude is controlling this tab" badge, like the Claude Chrome extension. Inject `scripts/control_border.js` (idempotent) before the first action on a tab, using the pattern from [Bundled Scripts](#bundled-scripts):
 
 ```bash
 JS=$(cat "$SKILL_DIR/scripts/control_border.js") osascript -l JavaScript -e '
@@ -538,7 +540,7 @@ Limits: the border frames the web content area only (not the toolbar), and canno
 
 For tasks that require visual confirmation, use the screenshot loop:
 
-1. Show the control indicator on the tab (section 15)
+1. Show the control indicator on the tab (section 15 — required)
 2. Perform action (navigate, click, scroll, etc.)
 3. Wait for page load if needed, then re-inject the control indicator
 4. Take screenshot (background or foreground) → Read the image to see result
